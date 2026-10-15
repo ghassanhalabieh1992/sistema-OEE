@@ -2,7 +2,7 @@
 
 .import-actions{margin-left:auto;display:flex;gap:8px;align-items:center}.danger-button{border:1px solid #efc3bd;border-radius:8px;background:#fff7f6;color:#ad3e34;padding:10px 14px;font-weight:700;font-size:13px}.danger-button:hover{background:#fbe8e5}
 .mapping-list select{min-width:210px;max-width:55%;border:1px solid #cfdad6;border-radius:7px;background:#fff;color:#29434f;padding:7px 28px 7px 9px;font:600 12px Inter,sans-serif}.mapping-list select:focus{outline:2px solid #9fd5b2;outline-offset:1px}.new-analysis-button{margin-top:15px}
-.analysis-scope{display:flex;align-items:flex-start;gap:6px;max-width:330px;margin:11px 0 0;color:#4e7562;font-size:11px;line-height:1.35}.analysis-scope svg{flex:none;margin-top:1px}
+.analysis-scope{display:flex;align-items:flex-start;gap:6px;max-width:330px;margin:11px 0 0;color:#4e7562;font-size:11px;line-height:1.35}.analysis-scope svg{flex:none;margin-top:1px}.analysis-actions{display:flex;gap:8px;align-items:center;margin-top:15px}
 
 :root { --ink:#10202e; --ink-2:#213746; --paper:#f4f7f6; --line:#dce5e1; --muted:#667780; --green:#2fa36b; --blue:#456f9a; --amber:#e6a53b; --red:#d9574a; --card:#fff; }
 * { box-sizing:border-box; }

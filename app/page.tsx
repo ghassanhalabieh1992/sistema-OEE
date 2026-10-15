@@ -11,7 +11,7 @@ import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer,
 import { calculateOee, dateValue, detectMapping, fieldLabels, formatPercent, normaliseHeader, numberValue, OeeRecord } from "@/lib/oee";
 
 type View = "dashboard" | "import" | "entry" | "quality";
-type ParsedUpload = { fileName: string; records: OeeRecord[]; headers: string[]; mapped: Record<string, string>; sheet: string; rejected: number; cloudStatus?: string; cloudMessage?: string };
+type ParsedUpload = { fileName: string; records: OeeRecord[]; headers: string[]; mapped: Record<string, string>; sheet: string; rejected: number; cloudStatus?: string; cloudMessage?: string; cloudImportId?: string };
 type RawRow = Record<string, unknown>;
 const lossColors = ["#D9574A", "#E6A53B", "#456F9A", "#8096A8", "#C57151"];
 
@@ -199,10 +199,26 @@ export default function Home() {
       setUpload((current) => current?.fileName === file.name ? {
         ...current,
         cloudStatus: result.status || "failed",
-        cloudMessage: result.error || undefined
+        cloudMessage: result.error || undefined,
+        cloudImportId: result.importId || undefined
       } : current);
     } catch {
       setUpload((current) => current?.fileName === file.name ? { ...current, cloudStatus: "failed", cloudMessage: "A prévia permanece disponível neste navegador; não foi possível salvar na nuvem." } : current);
+    }
+  }
+
+  async function deleteAnalysis() {
+    if (!upload || !window.confirm("Excluir este arquivo, os resultados do dashboard e os registros associados? Esta ação não pode ser desfeita.")) return;
+    const importId = upload.cloudImportId;
+    // Clear the active local analysis first. If cloud deletion ever fails, the
+    // dashboard never keeps showing data the consultant intended to remove.
+    window.localStorage.removeItem("gap-oee-local-import-v1");
+    setRecords([]); setUpload(null); setSourceRows([]);
+    setSelectedMachines([]); setSelectedGroups([]); setSelectedShift(""); setOperationalMonth(""); setOperationalWeek(""); setOperationalDay(""); setStartDate(""); setEndDate(""); setPeriod("all");
+    setView("dashboard");
+    if (importId) {
+      try { await fetch(`/api/import?id=${encodeURIComponent(importId)}`, { method: "DELETE" }); }
+      catch { /* The local analysis is still deleted; cloud cleanup can be retried by an administrator. */ }
     }
   }
 
@@ -269,7 +285,7 @@ export default function Home() {
         {!hasData ? <EmptyState onImport={() => fileInput.current?.click()} onEntry={() => setEntryOpen(true)}/> : <Dashboard metrics={metrics} operational={operational} records={filtered.length} lossData={lossData} machineData={machineData} scope={analysisScope} onNewAnalysis={() => fileInput.current?.click()}/>} 
       </>}
 
-      {view === "import" && <ImportView upload={upload} onChoose={() => fileInput.current?.click()} onGoDashboard={() => setView("dashboard")} onMappingChange={updateMapping} />}
+      {view === "import" && <ImportView upload={upload} onChoose={() => fileInput.current?.click()} onGoDashboard={() => setView("dashboard")} onDelete={deleteAnalysis} onMappingChange={updateMapping} />}
       {view === "quality" && <QualityView upload={upload} metrics={metrics} />}
       {view === "entry" && <EntryPanel machines={machines} onOpen={() => setEntryOpen(true)} />}
     </section>
@@ -300,14 +316,14 @@ function DetailGroup({ title, items }: { title: string; items: [string, number, 
 
 function ChartEmpty({ text }: { text: string }) { return <div className="chart-empty"><BarChart3 size={25}/><span>{text}</span></div>; }
 
-function ImportView({ upload, onChoose, onGoDashboard, onMappingChange }: { upload: ParsedUpload | null; onChoose: () => void; onGoDashboard: () => void; onMappingChange: (header: string, destination: string) => void }) {
+function ImportView({ upload, onChoose, onGoDashboard, onDelete, onMappingChange }: { upload: ParsedUpload | null; onChoose: () => void; onGoDashboard: () => void; onDelete: () => void; onMappingChange: (header: string, destination: string) => void }) {
   if (!upload) return <EmptyState onImport={onChoose} onEntry={() => {}}/>;
   const required = ["date", "machine", "plannedMinutes", "operatingMinutes", "technicalSpeed", "totalCount", "goodCount"];
   const mapped = Object.values(upload.mapped);
   const fields = Object.entries(fieldLabels).filter(([key]) => key !== "losses");
   const cloudLabel = upload.cloudStatus === "completed" ? "Arquivo e registros salvos no Supabase" : upload.cloudStatus === "saving" ? "Salvando arquivo no Supabase…" : upload.cloudStatus === "uploaded_pending_processing" ? "Arquivo salvo; Pandas será executado na implantação Vercel" : upload.cloudStatus === "failed" ? "Prévia local — falha no salvamento em nuvem" : "Resultados salvos neste navegador";
   return <div className="import-view">
-    <section className="import-result"><div className="success-badge"><CheckCircle2 size={23}/></div><div><p className="section-kicker">{cloudLabel}</p><h2>{upload.fileName}</h2><p>Planilha <strong>{upload.sheet}</strong> · {upload.records.length} linhas reconhecidas{upload.cloudMessage ? ` · ${upload.cloudMessage}` : ""}</p></div><button className="secondary-button" onClick={onChoose}><UploadCloud size={17}/>Nova análise / arquivo</button></section>
+    <section className="import-result"><div className="success-badge"><CheckCircle2 size={23}/></div><div><p className="section-kicker">{cloudLabel}</p><h2>{upload.fileName}</h2><p>Planilha <strong>{upload.sheet}</strong> · {upload.records.length} linhas reconhecidas{upload.cloudMessage ? ` · ${upload.cloudMessage}` : ""}</p></div><div className="import-actions"><button className="secondary-button" onClick={onChoose}><UploadCloud size={17}/>Nova análise / arquivo</button><button className="danger-button" onClick={onDelete}>Excluir análise</button></div></section>
     <section className="import-grid"><article className="mapping-card"><h2>Conferir e mapear colunas</h2><p>O sistema reconhece os nomes conhecidos automaticamente. Para cabeçalhos novos, escolha abaixo o campo equivalente. Uma coluna sem significado definido não entra no cálculo.</p><div className="mapping-list">{upload.headers.map((header) => <div key={header}><span>{header}</span><select aria-label={`Mapear ${header}`} value={upload.mapped[header] || ""} onChange={(event) => onMappingChange(header, event.target.value)}><option value="">Não usar nesta análise</option>{fields.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></div>)}</div></article><article className="quality-card"><h2>Validação inicial</h2><div className="validation"><div><span>Registros importados</span><strong>{upload.records.length}</strong></div><div><span>Linhas vazias/sem campos</span><strong>{upload.rejected}</strong></div><div><span>Campos essenciais mapeados</span><strong>{required.filter((item) => mapped.includes(item)).length}/{required.length}</strong></div></div><div className="info-note"><AlertTriangle size={17}/><p>Ao mudar um mapeamento, os registros e os indicadores são recalculados. Dados sem correspondência continuam fora do cálculo — nada é presumido.</p></div><button className="primary-button" onClick={onGoDashboard}><Gauge size={18}/>Ver indicadores</button></article></section>
   </div>;
 }

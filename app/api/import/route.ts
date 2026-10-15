@@ -73,3 +73,24 @@ export async function POST(request: Request) {
     return Response.json({ error: message }, { status: 500 });
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const importId = new URL(request.url).searchParams.get("id");
+    if (!importId) return Response.json({ error: "Informe o identificador da importação." }, { status: 400 });
+    const { url, key } = configuration();
+    const admin = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+    const { data: job, error: lookupError } = await admin.from("import_jobs").select("storage_path").eq("id", importId).maybeSingle();
+    if (lookupError) throw lookupError;
+    if (!job) return Response.json({ status: "already_deleted" });
+    const { error: deleteError } = await admin.from("import_jobs").delete().eq("id", importId);
+    if (deleteError) throw deleteError;
+    // production_records uses ON DELETE CASCADE; remove the source spreadsheet too.
+    const { error: storageError } = await admin.storage.from("gap-imports").remove([job.storage_path]);
+    if (storageError) throw storageError;
+    return Response.json({ status: "deleted" });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Não foi possível excluir a importação.";
+    return Response.json({ error: message }, { status: 500 });
+  }
+}

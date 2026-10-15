@@ -11,6 +11,37 @@ type AssistantRequest = {
   dataQuality?: string[];
 };
 
+function percentage(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value)
+    ? `${(value * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`
+    : "indisponível";
+}
+
+function indicatorContext(input: Record<string, unknown> | undefined) {
+  return {
+    oee_percent: percentage(input?.oee),
+    disponibilidade_percent: percentage(input?.availability),
+    performance_percent: percentage(input?.performance),
+    qualidade_percent: percentage(input?.quality),
+    tempo_planejado_min: input?.plannedMinutes ?? "indisponível",
+    tempo_operacional_min: input?.operatingMinutes ?? "indisponível",
+    producao_total_un: input?.totalCount ?? "indisponível",
+    producao_boa_un: input?.goodCount ?? "indisponível"
+  };
+}
+
+function forecastContext(input: Record<string, unknown> | undefined) {
+  return {
+    oee_estimado_percent: percentage(input?.oee),
+    disponibilidade_estimada_percent: percentage(input?.availability),
+    performance_estimada_percent: percentage(input?.performance),
+    qualidade_estimada_percent: percentage(input?.quality),
+    dias_utilizados: input?.daysUsed ?? 0,
+    confianca: input?.confidence ?? "insuficiente",
+    tendencia: input?.trend ?? "indisponível"
+  };
+}
+
 export async function POST(request: NextRequest) {
   const body = await request.json() as AssistantRequest;
   if (!body.question?.trim()) return NextResponse.json({ error: "Escreva uma pergunta para continuar." }, { status: 400 });
@@ -18,12 +49,12 @@ export async function POST(request: NextRequest) {
 
   const context = {
     filters: body.filters || {},
-    indicators: body.metrics || {},
-    forecast_next_operational_day: body.forecast || {},
+    indicators: indicatorContext(body.metrics),
+    forecast_next_operational_day: forecastContext(body.forecast),
     losses_minutes: body.losses || [],
     missing_inputs: body.dataQuality || []
   };
-  const system = `Você é GAP Insight, um analista industrial que explica OEE e previsões operacionais em português do Brasil. Use exclusivamente o resumo JSON fornecido. A previsão numérica é estatística e deve ser tratada como estimativa, nunca como certeza. Não invente causas, metas, números ou dados que não estejam no contexto. Se algum componente estiver indisponível ou houver dados faltantes, declare isso primeiro. Explique com objetividade, em no máximo 130 palavras. Não apresente a resposta como diagnóstico definitivo.`;
+  const system = `Você é GAP Insight, um analista industrial que explica OEE e previsões operacionais em português do Brasil. Use exclusivamente o resumo JSON fornecido. A previsão numérica é estatística e deve ser tratada como estimativa, nunca como certeza. Todos os indicadores de OEE no resumo terminam em _percent e já estão formatados como porcentagem. Ao citá-los, copie exatamente esse formato, por exemplo "66,2%". Nunca converta um indicador para decimal e nunca mostre "0" como OEE quando houver um valor percentual disponível. Não invente causas, metas, números ou dados que não estejam no contexto. Se algum componente estiver indisponível ou houver dados faltantes, declare isso primeiro. Explique com objetividade, em no máximo 130 palavras. Não apresente a resposta como diagnóstico definitivo.`;
 
   try {
     const result = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -35,7 +66,7 @@ export async function POST(request: NextRequest) {
         "X-Title": "GAP OEE Insight"
       },
       body: JSON.stringify({
-        model: process.env.OPENROUTER_MODEL || "qwen/qwen3.6-27b",
+        model: process.env.OPENROUTER_MODEL || "openrouter/free",
         temperature: 0.15,
         max_tokens: 280,
         messages: [

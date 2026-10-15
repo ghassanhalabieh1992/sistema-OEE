@@ -15,6 +15,14 @@ type ParsedUpload = { fileName: string; records: OeeRecord[]; headers: string[];
 type RawRow = Record<string, unknown>;
 const lossColors = ["#D9574A", "#E6A53B", "#456F9A", "#8096A8", "#C57151"];
 
+// SheetJS creates names such as "__EMPTY" for formatted Excel columns that
+// have no header. They are not source fields and must never appear as a
+// mapping option for the consultant.
+function isUsableHeader(header: string) {
+  const value = header.trim();
+  return Boolean(value) && !/^__EMPTY(?:_\d+)?$/i.test(value);
+}
+
 function field<T extends keyof OeeRecord>(record: OeeRecord, key: T, value: unknown) {
   if (["operationalMonth", "operationalWeek", "operationalDay", "plannedMinutes", "operatingMinutes", "downtimeMinutes", "breakdownMinutes", "setupMinutes", "cleaningMinutes", "adjustmentsMinutes", "materialShortageMinutes", "supplyShortageMinutes", "microstopsMinutes", "idealCycleSeconds", "technicalSpeed", "averageSpeed", "calendarMinutes", "preventiveExcludedMinutes", "totalCount", "goodCount", "rejectCount"].includes(key)) {
     const parsed = numberValue(value);
@@ -173,8 +181,9 @@ export default function Home() {
       if (!sheetName) throw new Error("Nenhuma planilha com dados foi encontrada.");
       // raw:true preserves the original numeric values. Formatted strings from
       // Excel (for example "224,608") would otherwise corrupt production totals.
-      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(book.Sheets[sheetName], { defval: null, raw: true });
-      const headers = rows.length ? Object.keys(rows[0]) : [];
+      const importedRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(book.Sheets[sheetName], { defval: null, raw: true });
+      const headers = [...new Set(importedRows.flatMap((row) => Object.keys(row)))].filter(isUsableHeader);
+      const rows = importedRows.map((row) => Object.fromEntries(Object.entries(row).filter(([header]) => isUsableHeader(header))));
       const mapping = detectMapping(headers);
       const parsed = buildRecords(rows, mapping);
       setSourceRows(rows);

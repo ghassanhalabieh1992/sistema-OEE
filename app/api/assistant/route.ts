@@ -42,6 +42,22 @@ function forecastContext(input: Record<string, unknown> | undefined) {
   };
 }
 
+// OpenRouter-compatible models usually return a string, but some providers
+// return a list of text parts. Accept both without exposing provider payloads
+// or internal reasoning to the browser.
+function responseText(message: unknown) {
+  if (!message || typeof message !== "object") return "";
+  const content = (message as { content?: unknown }).content;
+  if (typeof content === "string") return content.trim();
+  if (!Array.isArray(content)) return "";
+  return content.map((part) => {
+    if (typeof part === "string") return part;
+    if (!part || typeof part !== "object") return "";
+    const item = part as { text?: unknown; content?: unknown };
+    return typeof item.text === "string" ? item.text : typeof item.content === "string" ? item.content : "";
+  }).join("").trim();
+}
+
 export async function POST(request: NextRequest) {
   const body = await request.json() as AssistantRequest;
   if (!body.question?.trim()) return NextResponse.json({ error: "Escreva uma pergunta para continuar." }, { status: 400 });
@@ -84,7 +100,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `OpenRouter HTTP ${result.status}: ${hint}.` }, { status: 502 });
     }
     const data = await result.json();
-    return NextResponse.json({ answer: data.choices?.[0]?.message?.content || "Não foi possível interpretar a resposta do assistente." });
+    const answer = responseText(data.choices?.[0]?.message);
+    if (!answer) {
+      console.error("OpenRouter returned no displayable message", {
+        responseId: data.id,
+        model: data.model,
+        choices: Array.isArray(data.choices) ? data.choices.length : 0,
+        finishReason: data.choices?.[0]?.finish_reason
+      });
+      return NextResponse.json({ error: "O provedor de IA respondeu sem texto. Tente novamente em alguns segundos." }, { status: 502 });
+    }
+    return NextResponse.json({ answer });
   } catch {
     return NextResponse.json({ error: "Não foi possível conectar ao assistente agora." }, { status: 502 });
   }

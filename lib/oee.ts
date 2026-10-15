@@ -189,3 +189,50 @@ export function calculateOee(records: OeeRecord[]): OeeResult {
 export function formatPercent(value: number | null) {
   return value === null || Number.isNaN(value) ? "—" : `${(value * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
 }
+
+export type OeeForecast = {
+  oee: number | null;
+  availability: number | null;
+  performance: number | null;
+  quality: number | null;
+  daysUsed: number;
+  confidence: "insuficiente" | "baixa" | "moderada";
+  trend: "melhora" | "estável" | "queda";
+};
+
+function forecastValue(values: number[]) {
+  if (values.length < 2) return null;
+  const n = values.length;
+  const meanX = (n - 1) / 2;
+  const meanY = values.reduce((sum, value) => sum + value, 0) / n;
+  const numerator = values.reduce((sum, value, index) => sum + (index - meanX) * (value - meanY), 0);
+  const denominator = values.reduce((sum, _, index) => sum + (index - meanX) ** 2, 0);
+  const slope = denominator ? numerator / denominator : 0;
+  return Math.max(0, Math.min(1, meanY + slope * ((n - 1) - meanX + 1)));
+}
+
+// A transparent trend forecast is used for the numeric estimate. The language
+// model may explain it, but it never generates the number itself.
+export function forecastOee(records: OeeRecord[]): OeeForecast {
+  const byDate = new Map<string, OeeRecord[]>();
+  records.forEach((record) => {
+    if (!record.date) return;
+    byDate.set(record.date, [...(byDate.get(record.date) || []), record]);
+  });
+  const daily = [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, rows]) => calculateOee(rows));
+  const sample = daily.slice(-21);
+  const values = (key: keyof Pick<OeeResult, "oee" | "availability" | "performance" | "quality">) => sample.map((item) => item[key]).filter((value): value is number => value !== null);
+  const oeeValues = values("oee");
+  const oee = forecastValue(oeeValues);
+  const average = oeeValues.length ? oeeValues.reduce((sum, value) => sum + value, 0) / oeeValues.length : null;
+  const delta = oee !== null && average !== null ? oee - average : 0;
+  return {
+    oee,
+    availability: forecastValue(values("availability")),
+    performance: forecastValue(values("performance")),
+    quality: forecastValue(values("quality")),
+    daysUsed: sample.length,
+    confidence: sample.length < 7 ? "insuficiente" : sample.length < 14 ? "baixa" : "moderada",
+    trend: Math.abs(delta) < 0.005 ? "estável" : delta > 0 ? "melhora" : "queda"
+  };
+}

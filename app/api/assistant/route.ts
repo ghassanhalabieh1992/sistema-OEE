@@ -5,6 +5,7 @@ export const runtime = "nodejs";
 type AssistantRequest = {
   question?: string;
   metrics?: Record<string, unknown>;
+  forecast?: Record<string, unknown>;
   losses?: Array<{ name: string; value: number }>;
   filters?: Record<string, unknown>;
   dataQuality?: string[];
@@ -18,10 +19,11 @@ export async function POST(request: NextRequest) {
   const context = {
     filters: body.filters || {},
     indicators: body.metrics || {},
+    forecast_next_operational_day: body.forecast || {},
     losses_minutes: body.losses || [],
     missing_inputs: body.dataQuality || []
   };
-  const system = `Você é GAP Insight, um analista industrial que explica OEE em português do Brasil. Use exclusivamente o resumo JSON fornecido. Não invente causas, metas, números ou dados que não estejam no contexto. Se algum componente estiver indisponível ou houver dados faltantes, declare isso primeiro. Explique com objetividade, em no máximo 130 palavras. Não apresente a resposta como diagnóstico definitivo.`;
+  const system = `Você é GAP Insight, um analista industrial que explica OEE e previsões operacionais em português do Brasil. Use exclusivamente o resumo JSON fornecido. A previsão numérica é estatística e deve ser tratada como estimativa, nunca como certeza. Não invente causas, metas, números ou dados que não estejam no contexto. Se algum componente estiver indisponível ou houver dados faltantes, declare isso primeiro. Explique com objetividade, em no máximo 130 palavras. Não apresente a resposta como diagnóstico definitivo.`;
 
   try {
     const result = await fetch("https://openrouter.ai/api/v1/chat/completions", {

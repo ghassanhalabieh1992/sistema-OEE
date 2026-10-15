@@ -44,7 +44,14 @@ export async function POST(request: NextRequest) {
         ]
       })
     });
-    if (!result.ok) return NextResponse.json({ error: "O provedor de IA não respondeu. Tente novamente ou verifique a configuração." }, { status: 502 });
+    if (!result.ok) {
+      // Keep the provider body in server logs only. The UI receives an HTTP
+      // status that is actionable but never exposes the API key or payload.
+      const providerBody = await result.text();
+      console.error("OpenRouter request failed", { status: result.status, providerBody });
+      const hint = result.status === 401 ? "verifique a chave OPENROUTER_API_KEY" : result.status === 429 ? "o limite gratuito foi atingido; tente novamente mais tarde" : result.status === 402 ? "a conta não possui crédito ou permissão para este modelo" : "o modelo gratuito está temporariamente indisponível";
+      return NextResponse.json({ error: `OpenRouter HTTP ${result.status}: ${hint}.` }, { status: 502 });
+    }
     const data = await result.json();
     return NextResponse.json({ answer: data.choices?.[0]?.message?.content || "Não foi possível interpretar a resposta do assistente." });
   } catch {
